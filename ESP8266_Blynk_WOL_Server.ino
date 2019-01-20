@@ -38,7 +38,7 @@ byte macAddr[6] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 //Alert config
 const char email[] = "example@example.com";
 const char device_name[] = "NAS";
-const uint16_t boot_time = 45;	//seconds
+const uint16_t boot_time = 45;	//number for countdown (It does not represent seconds, read the known issues!)
 
 //WOL
 #define MAGIC_PACKET_LENGTH 102

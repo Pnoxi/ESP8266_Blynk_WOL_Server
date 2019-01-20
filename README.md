@@ -6,7 +6,7 @@ This app is written for my NAS server and supports only one device!
 It requires a static IP for the WOL server (configured in the source code) and for the device (you need to configure it yourself).
 
 Do you need some device with ESP-8266/ESP-8285 (I use WeMos D1 mini Lite), [Blynk](https://www.blynk.cc/getting-started/) application (Scan the application QR code you will find below!), and device configured for Wake on LAN (I can not help you with that, see bios... use google...)
-To upload the software, use [Arduino IDE](https://www.arduino.cc/en/main/software) with the [plug-in](https://github.com/esp8266/Arduino) installed.
+To upload the software, use [Arduino IDE](https://www.arduino.cc/en/main/software) with the [ESP8266 plug-in](https://github.com/esp8266/Arduino) and [Ping Library](https://github.com/dancol90/ESP8266Ping) installed.
 
 --------------------
 
@@ -31,7 +31,7 @@ byte macAddr[6] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 //Alert config
 const char email[] = "example@example.com";
 const char device_name[] = "NAS";
-const uint16_t boot_time = 45;	//seconds
+const uint16_t boot_time = 45;	//number for countdown (It does not represent seconds, but it's close, read the known issues!)
 ```
 
 Variable name | Default value | Comment
@@ -48,19 +48,26 @@ device_ip | 192.168.0.234 | Static IP address of device to be turned on (used fo
 macAddr | aa:bb:cc:dd:ee:ff | Mac address of device to be turned on (important for the magic packet)
 email | example@example.com | Email address for notifications (when the device could not be turned on within the set time limit)
 device_name | NAS | The short name of your device that turns on
-boot_time | 45 | Maximum time to wait for the device to turn on (used for notification)
+boot_time | 45 | Maximum time to wait for the device to turn on (used for notification, read the known issues!)
 --------------------
 
-## QR code of the Blynk application (Click for a larger picture):
+## QR code of the Blynk application (Click for a larger image):
 [![Blynk_QR](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/QR_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/QR.png)
 
 
-## App preview (Click for a larger picture):
+## App preview (Click for a larger image):
 [![Demo](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/1_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/1.png)
 [![Demo](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/2_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/2.png)
 [![Demo](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/3_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/3.png)
 [![Demo](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/4_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/4.png)
 [![Demo](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/5_thumbnail.png)](https://www.emsit.sk/SharedContent/GitHub/ESP8266_Blynk_WOL_Server/5.png)
+
+Known Issues
+--------------------
+
+variable **boot_time** does not represent seconds, It's about one number for two seconds. It is caused by waiting for Ping.
+
+Your device probably will not respond to the **magic packet** after a power failure. Manual turn-on is required.
 
 
 License Information
