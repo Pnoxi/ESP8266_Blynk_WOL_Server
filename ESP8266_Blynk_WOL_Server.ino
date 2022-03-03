@@ -1,3 +1,12 @@
+#define BLYNK_TEMPLATE_ID "" //your blynk template id
+#define BLYNK_DEVICE_NAME "" //your blynk device name
+#define BLYNK_AUTH_TOKEN "" //your blynk auth token
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <WiFiUdp.h>
+#include <ESP8266Ping.h>
+
 //#define DEBUG
 #ifdef DEBUG
 #define BLYNK_PRINT Serial
@@ -8,10 +17,6 @@
 #define BLYNK_NO_BUILTIN	//disable built-in analog and digital operations.
 //#define BLYNK_NO_INFO		//disable providing info about device to the server. (saving time)
 
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
-#include <WiFiUdp.h>
-#include <ESP8266Ping.h>
 
 //blynk colors
 #define BLYNK_GREEN		"#23C48E"
@@ -32,13 +37,12 @@ const IPAddress subnet(255, 255, 255, 0);
 const IPAddress dns(1, 1, 1, 1);
 
 //WOL device config
-const IPAddress device_ip(192, 168, 0, 234);
-byte macAddr[6] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
+const IPAddress device_ip(192, 168, 0, 234); //server IP address
+byte macAddr[6] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}; //server MAC address
 
-//Alert config
-const char email[] = "example@example.com";
-const char device_name[] = "NAS";
-const uint16_t boot_time = 45;	//number for countdown (It does not represent seconds, read the known issues!)
+
+const char device_name[] = "NAS"; //Device name
+const uint16_t boot_time = 45;	//one number for aprox 2 seconds (check known issues)
 
 //WOL
 #define MAGIC_PACKET_LENGTH 102
@@ -65,10 +69,111 @@ struct WOLServerState {
 };
 WOLServerState currentState = { false, 0, false, 0, 0, 5000UL };
 
+// timer
+BlynkTimer timer;
+
+void timerFunct()
+{
+
+  Blynk.virtualWrite(RSSI_PIN, WiFi.RSSI());
+  Blynk.virtualWrite(PING_TIME_PIN, currentState.ping);
+
+  if (currentState.IsOnline)
+  {
+    Blynk.setProperty(STATE_PIN, "color", BLYNK_GREEN);
+    Blynk.virtualWrite(STATE_PIN, String(device_name) + " is Online");
+
+    Blynk.setProperty(BUTTON_PIN, "color", BLYNK_DARK_BLUE);
+    Blynk.setProperty(BUTTON_PIN, "offLabel", String(device_name) + " running...");
+    Blynk.setProperty(BUTTON_PIN, "onLabel", String(device_name) + " running...");
+  }
+  else if (!currentState.IsOnline && currentState.boot_time > 0)
+  {
+    Blynk.setProperty(STATE_PIN, "color", BLYNK_BLUE);
+    Blynk.virtualWrite(STATE_PIN, "Waiting for ping...");
+
+    Blynk.setProperty(BUTTON_PIN, "color", BLYNK_YELLOW);
+    Blynk.setProperty(BUTTON_PIN, "offLabel", currentState.boot_time);
+    Blynk.setProperty(BUTTON_PIN, "onLabel", currentState.boot_time);
+  }
+  else if (!currentState.IsOnline && currentState.boot_time == 0 && currentState.boot_error)
+  {
+    Blynk.setProperty(STATE_PIN, "color", BLYNK_RED);
+    Blynk.virtualWrite(STATE_PIN, "Oops! Something happened, Try It Again!");
+
+    Blynk.setProperty(BUTTON_PIN, "color", BLYNK_YELLOW);
+    Blynk.setProperty(BUTTON_PIN, "offLabel", "Try It Again");
+    Blynk.setProperty(BUTTON_PIN, "onLabel", "Magic Packet has been sent");
+  }
+  else
+  {
+    Blynk.setProperty(STATE_PIN, "color", BLYNK_RED);
+    Blynk.virtualWrite(STATE_PIN, String(device_name) + " is Offline");
+
+    Blynk.setProperty(BUTTON_PIN, "color", BLYNK_BLUE);
+    Blynk.setProperty(BUTTON_PIN, "offLabel", "Turn On");
+    Blynk.setProperty(BUTTON_PIN, "onLabel", "Magic Packet has been sent");
+  }
+}
+
+void connectWiFi()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("WOL server");
+  WiFi.config(ip, dns, gateway, subnet);
+  WiFi.begin(ssid, pass);
+
+  int count = 0;
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(250);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(250);
+    digitalWrite(LED_BUILTIN, LOW);
+
+    count++;
+    if (count > 20)
+    {
+      delay(500);
+      ESP.restart();
+    }
+  }
+
+  //BLYNK_LOG("WiFi connected, IP: %s", WiFi.localIP().toString());
+}
+
+void connectBlynk()
+{
+  Blynk.config(auth);
+  Blynk.disconnect();
+
+  int count = 0;
+  while (Blynk.connect(10000) == false)
+  {
+    delay(250);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(250);
+    digitalWrite(LED_BUILTIN, LOW);
+
+    count++;
+    if (count > 20)
+    {
+      delay(500);
+      ESP.restart();
+    }
+  }
+
+  BLYNK_LOG("Blynk connected");
+}
+
+
+
 void setup() {
 #ifdef DEBUG
 	Serial.begin(115200);
 #endif
+
+	timer.setInterval(1000L, timerFunct);
 
 	connectWiFi();
 	connectBlynk();
@@ -84,148 +189,79 @@ void setup() {
 	//}
 }
 
-void connectWiFi() {
-	WiFi.mode(WIFI_STA);
-	WiFi.hostname("WOL server");
-	WiFi.config(ip, dns, gateway, subnet);
-	WiFi.begin(ssid, pass);
+void loop()
+{
 
-	int count = 0;
-	while (WiFi.status() != WL_CONNECTED) {
-		delay(250);
-		digitalWrite(LED_BUILTIN, HIGH);
-		delay(250);
-		digitalWrite(LED_BUILTIN, LOW);
+  // Reconnect WiFi
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    connectWiFi();
+    return;
+  }
 
-		count++;
-		if (count > 20) {
-			delay(500);
-			ESP.restart();
-		}
-	}
+  // Reconnect to Blynk Cloud
+  if (!Blynk.connected())
+  {
+    connectBlynk();
+    return;
+  }
 
-	//BLYNK_LOG("WiFi connected, IP: %s", WiFi.localIP().toString());
+  uint32_t currentMillis = millis();
+  if (currentMillis - currentState.previousMillis >= currentState.interval)
+  {
+    currentState.previousMillis = currentMillis;
+
+    if (currentState.boot_time == 0)
+    {
+      currentState.interval = 5000UL;
+    }
+    else
+    {
+      currentState.boot_time--;
+      if (currentState.boot_time == 0)
+      {
+        currentState.boot_error = true;
+        Blynk.logEvent("server_error");
+      }
+    }
+
+    if (Ping.ping(device_ip, 1))
+    {
+      currentState.IsOnline = true;
+      currentState.boot_error = false;
+      currentState.boot_time = 0;
+      currentState.ping = Ping.averageTime();
+    }
+    else
+    {
+      currentState.IsOnline = false;
+      currentState.ping = 0;
+    }
+  }
+
+  Blynk.run();
+  timer.run();
 }
 
-void connectBlynk() {
-	Blynk.config(auth);
-	Blynk.disconnect();
-
-	int count = 0;
-	while (Blynk.connect(10000) == false) {
-		delay(250);
-		digitalWrite(LED_BUILTIN, HIGH);
-		delay(250);
-		digitalWrite(LED_BUILTIN, LOW);
-
-		count++;
-		if (count > 20) {
-			delay(500);
-			ESP.restart();
-		}
-	}
-
-	BLYNK_LOG("Blynk connected");
-}
-
-void loop() {
-	// Reconnect WiFi
-	if (WiFi.status() != WL_CONNECTED) {
-		connectWiFi();
-		return;
-	}
-
-	// Reconnect to Blynk Cloud
-	if (!Blynk.connected()) {
-		connectBlynk();
-		return;
-	}
-
-	uint32_t currentMillis = millis();
-	if (currentMillis - currentState.previousMillis >= currentState.interval) {
-		currentState.previousMillis = currentMillis;
-
-		if (currentState.boot_time == 0) {
-			currentState.interval = 5000UL;
-		} else {
-			currentState.boot_time--;
-			if (currentState.boot_time == 0) {
-				currentState.boot_error = true;
-				Blynk.email(email, "{DEVICE_NAME} : Alert", String(device_name) + " could not be turned on!");
-			}
-		}
-
-		if (Ping.ping(device_ip, 1)) {
-			currentState.IsOnline = true;
-			currentState.boot_error = false;
-			currentState.boot_time = 0;
-			currentState.ping = Ping.averageTime();
-		} else {
-			currentState.IsOnline = false;
-			currentState.ping = 0;
-		}
-	}
-
-	Blynk.run();
-}
-
-// Generate magic packet
-void buildMagicPacket() {
-	memset(magicPacket, 0xFF, 6);
-	for (int i = 0; i < 16; i++) {
-		int ofs = i * sizeof(macAddr) + 6;
-		memcpy(&magicPacket[ofs], macAddr, sizeof(macAddr));
-	}
-}
+//uncomment if you want to sync state when device is rebooted
 
 //BLYNK_CONNECTED() {
 //	Blynk.syncVirtual(BUTTON_PIN);
 //}
 
 // BOOT PC button handler of application
-BLYNK_WRITE(BUTTON_PIN) {
-	if (!currentState.IsOnline && currentState.boot_time == 0) {
-		BLYNK_LOG("AppButtonWakeOnLan: value=%d", param.asInt());
-		udp.beginPacket(bcastAddr, PORT_WAKEONLAN);
-		udp.write(magicPacket, MAGIC_PACKET_LENGTH);
-		udp.endPacket();
+BLYNK_WRITE(BUTTON_PIN)
+{
+  if (!currentState.IsOnline && currentState.boot_time == 0)
+  {
+    BLYNK_LOG("AppButtonWakeOnLan: value=%d", param.asInt());
+    udp.beginPacket(bcastAddr, PORT_WAKEONLAN);
+    udp.write(magicPacket, MAGIC_PACKET_LENGTH);
+    udp.endPacket();
 
-		currentState.boot_time = boot_time;
-		currentState.interval = 1000UL;
-	}
-}
-
-BLYNK_READ(STATE_PIN) {
-	Blynk.virtualWrite(RSSI_PIN, WiFi.RSSI());
-	Blynk.virtualWrite(PING_TIME_PIN, currentState.ping);
-
-	if (currentState.IsOnline) {
-		Blynk.setProperty(STATE_PIN, "color", BLYNK_GREEN);
-		Blynk.virtualWrite(STATE_PIN, String(device_name) + " is Online");
-
-		Blynk.setProperty(BUTTON_PIN, "color", BLYNK_DARK_BLUE);
-		Blynk.setProperty(BUTTON_PIN, "offLabel", String(device_name) + " running...");
-		Blynk.setProperty(BUTTON_PIN, "onLabel", String(device_name) + " running...");
-	} else if (!currentState.IsOnline && currentState.boot_time > 0) {
-		Blynk.setProperty(STATE_PIN, "color", BLYNK_BLUE);
-		Blynk.virtualWrite(STATE_PIN, "Waiting for ping...");
-
-		Blynk.setProperty(BUTTON_PIN, "color", BLYNK_YELLOW);
-		Blynk.setProperty(BUTTON_PIN, "offLabel", currentState.boot_time);
-		Blynk.setProperty(BUTTON_PIN, "onLabel", "Waiting for ping...");
-	} else if (!currentState.IsOnline && currentState.boot_time == 0 && currentState.boot_error) {
-		Blynk.setProperty(STATE_PIN, "color", BLYNK_RED);
-		Blynk.virtualWrite(STATE_PIN, "Oops! Something happened, Try It Again!");
-
-		Blynk.setProperty(BUTTON_PIN, "color", BLYNK_YELLOW);
-		Blynk.setProperty(BUTTON_PIN, "offLabel", "Try It Again");
-		Blynk.setProperty(BUTTON_PIN, "onLabel", "Magic Packet has been sent");
-	} else {
-		Blynk.setProperty(STATE_PIN, "color", BLYNK_RED);
-		Blynk.virtualWrite(STATE_PIN, String(device_name) + " is Offline");
-
-		Blynk.setProperty(BUTTON_PIN, "color", BLYNK_BLUE);
-		Blynk.setProperty(BUTTON_PIN, "offLabel", "Turn On");
-		Blynk.setProperty(BUTTON_PIN, "onLabel", "Magic Packet has been sent");
-	}
+    currentState.boot_time = boot_time;
+    currentState.interval = 1000UL;
+  }
+  delay(2000);
+  Blynk.virtualWrite(BUTTON_PIN, 0);
 }
