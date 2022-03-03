@@ -61,7 +61,7 @@ const uint16_t boot_time = 45;	//number for countdown (It does not represent sec
 ## Blynk device configuration:
 
 I don't think there is yet a way to share templates on the new Blynk,
-but this is how the dashboard is created:
+but you can go to images to see how the dashboard is created.
 
 ## Known Issues
 
